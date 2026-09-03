@@ -1,64 +1,84 @@
-const manifest = {
-    name: "Zyganox Multi-Stream",
-    id: "com.drugszack.custom",
-    version: 2,
-    tvTypes: ["Movie", "TvSeries", "Anime", "Cartoon"],
-    language: "en"
-};
+package com.myextension
 
-class MultiProvider {
-    constructor() {
-        // आपकी दी गई मुख्य वेबसाइट्स की लिस्ट
-        this.sources = {
-            katmovie: "https://katmoviehdonline.com",
-            hdmovieverse: "https://hdmovieverse.space",
-            hdhub4u: "https://hdhub4u.bi",
-            animeworld: "https://watchanimeworld.one",
-            animekai: "https://animekai.be",
-            deadtoons: "https://deadtoons.sbs"
-        };
-        // डिफ़ॉल्ट रूप से पहली साइट सेट की है
-        this.mainUrl = this.sources.hdhub4u; 
+import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
+import org.jsoup.nodes.Document
+
+class KatmovieProvider : MainAPI() {
+    override var mainUrl = "https://katmoviehdonline.com"
+    override var name = "KatmovieHD"
+    override var lang = "hi"
+    override val supportedTypes = setOf(
+        TvType.Movie,
+        TvType.TvSeries
+    )
+
+    override val hasMainPage = true
+
+    // Main Page / Home Page Feed
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        val document = app.get("$mainUrl/page/$page/").document
+        val home = document.select("article, div.post").mapNotNull {
+            it.toSearchResult()
+        }
+        return newHomePageResponse(request.name, home)
     }
 
-    async getMainPage() {
-        // यहाँ ऐप का होमपेज लोड होने का लॉजिक आएगा
-        return []; 
-    }
+    private fun org.jsoup.nodes.Element.toSearchResult(): SearchResponse? {
+        val title = this.selectFirst("h2, h3, .entry-title")?.text() ?: return null
+        val href = this.selectFirst("a")?.attr("href") ?: return null
+        val posterUrl = this.selectFirst("img")?.attr("src")
 
-    async search(query) {
-        // यह फंक्शन आपकी चुनी हुई साइट्स पर सर्च करेगा
-        const searchUrl = `${this.mainUrl}/?s=${encodeURIComponent(query)}`;
-        try {
-            const response = await request(searchUrl);
-            const document = parseHtml(response.text);
-            const results = [];
-
-            // वेबसाइट्स का सामान्य वर्डप्रेस स्ट्रक्चर स्क्रेप करना
-            document.querySelectorAll(".latest-post, .post-item, .item").forEach(element => {
-                const titleElement = element.querySelector("h2, h3, .title");
-                const linkElement = element.querySelector("a");
-                const imgElement = element.querySelector("img");
-
-                if (titleElement && linkElement) {
-                    results.push({
-                        name: titleElement.text.trim(),
-                        url: linkElement.getAttribute("href"),
-                        posterUrl: imgElement ? imgElement.getAttribute("src") : "",
-                        type: "Movie"
-                    });
-                }
-            });
-            return results;
-        } catch (error) {
-            return [];
+        return newMovieSearchResponse(title, href, TvType.Movie) {
+            this.posterUrl = posterUrl
         }
     }
 
-    async loadLinks(url) {
-        // यह वीडियो प्लेयर के लिंक (जैसे ड्राइव या सर्वर लिंक्स) निकालेगा
-        return []; 
+    // Search Logic
+    override suspend fun search(query: String): List<SearchResponse> {
+        val url = "$mainUrl/?s=$query"
+        val document = app.get(url).document
+        return document.select("article, div.post").mapNotNull {
+            it.toSearchResult()
+        }
+    }
+
+    // Load Details (Movie/Series Page)
+    override suspend fun load(url: String): LoadResponse {
+        val document = app.get(url).document
+        val title = document.selectFirst("h1.entry-title")?.text() ?: "Unknown"
+        val poster = document.selectFirst("div.entry-content img")?.attr("src")
+        val plot = document.select("div.entry-content p").text()
+
+        // Page par available links collect karna
+        val links = document.select("div.entry-content a[href*='drive'], div.entry-content a[href*='download']").map {
+            it.attr("href")
+        }
+
+        return newMovieLoadResponse(title, url, TvType.Movie, links) {
+            this.posterUrl = poster
+            this.plot = plot
+        }
+    }
+
+    // Extract Stream/Download Links
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        // 'data' main humne links list paas ki thi
+        val links = data.replace("[", "").replace("]", "").split(",")
+        
+        for (link in links) {
+            val cleanLink = link.trim()
+            if (cleanLink.isNotEmpty()) {
+                // CloudStream ke Built-in Extractors ka use karna
+                loadExtractor(cleanLink, subtitleCallback, callback)
+            }
+        }
+        return true
     }
 }
-
-export default MultiProvider;
