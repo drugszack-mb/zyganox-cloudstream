@@ -1,0 +1,17 @@
+{
+  "name": "My Custom Repo",
+  "description": "Custom streaming providers",
+  "manifestVersion": 1,
+  "pluginUrl": "",
+  "plugins": [
+    {
+      "name": "All-In-One Movies & Anime",
+      "id": "com.custom.allinone",
+      "version": 1,
+      "authors": ["Developer"],
+      "tvTypes": ["Movie", "TvSeries", "Anime"],
+      "language": "en",
+      "url": "https://githubusercontent.com"
+    }
+  ]
+}
